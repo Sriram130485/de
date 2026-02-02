@@ -1,0 +1,9 @@
+import { render } from '@testing-library/react-native';
+import RoleSelectionScreen from '../screens/RoleSelectionScreen';
+import { ThemeProvider } from '../context/ThemeContext';
+
+// Simple unit test verification idea
+// This file is just for documentation of validation steps
+// 1. Check if RoleSelectionScreen renders
+// 2. Check for 3 RoleCards
+// 3. Check for "How will you use Driviiera today?" text

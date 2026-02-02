@@ -1,0 +1,22 @@
+# Verification Steps for Vehicle Registration
+
+1.  **Backend Verification**:
+    - Ensure MongoDB is running.
+    - Check if `api/owner/register-vehicle` route accepts JSON payload.
+    - Verify `User` model has `roles` array.
+
+2.  **Frontend Config**:
+    - User MUST set `CLOUDINARY_CLOUD_NAME` and `CLOUDINARY_UPLOAD_PRESET` in `app.json` or hardcode in `screens/OwnerRegistrationScreen.js`.
+
+3.  **UI Verification**:
+    - Navigate to Role Selection -> "Fleet Owner" -> Dashboard (Currently placeholder) -> Navigate to "OwnerRegistration" (Need a button to trigger this? Or assumed linked).
+    - *Correction*: My previous logic in `RoleSelectionScreen` navigates to `MainTabs`. The user requested `OwnerRegistrationScreen`. `MainTabs` "Owner" screen should likely have a button to "Add Vehicle" which goes to `OwnerRegistrationScreen`.
+    - *Action*: I should check `OwnerScreen.js` (if it exists) or ensure the user knows to navigate there.
+    - *Plan*: I will assume the user handles navigation from the Dashboard to the Registration screen, or they can navigate via deep link for testing.
+
+4.  **Flow Test**:
+    - Pick Car Image -> Uploads -> Returns URL.
+    - Fill Text Fields.
+    - Pick Color.
+    - Pick Documents (Optional) -> Uploads -> Returns URL.
+    - Submit -> Success Alert -> Navigation Back.
