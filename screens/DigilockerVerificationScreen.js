@@ -6,7 +6,7 @@ import { useTheme } from '../context/ThemeContext';
 import { AuthContext } from '../context/AuthContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
-import api from '../services/api';
+import axios from 'axios';
 import * as FileSystem from 'expo-file-system/legacy';
 // Local constants for backend verification
 const VERIFICATION_STATUS = {
@@ -14,6 +14,12 @@ const VERIFICATION_STATUS = {
     REVIEW_REQUIRED: 'REVIEW_REQUIRED',
     FAILED: 'FAILED'
 };
+
+// Configuration
+// Production URL for DigiLocker
+const BACKEND_URL = "https://de-server-9fhx.onrender.com";
+
+// const BACKEND_URL = "https://sherrill-leptospiral-quellingly.ngrok-free.dev";
 
 const DigilockerVerificationScreen = ({ navigation }) => {
     const { theme } = useTheme();
@@ -36,9 +42,7 @@ const DigilockerVerificationScreen = ({ navigation }) => {
         console.log("Deep link received:", event.url);
 
         const status = data.queryParams?.status;
-        const code = data.queryParams?.code;
-        const state = data.queryParams?.state;
-        const sessionId = data.queryParams?.sessionId; // Legacy
+        const sessionId = data.queryParams?.sessionId;
         const rawError = data.queryParams?.error;
         const error = rawError ? rawError.trim() : null;
 
@@ -46,12 +50,9 @@ const DigilockerVerificationScreen = ({ navigation }) => {
 
         WebBrowser.dismissBrowser();
 
-        if (status === 'success' && code && state) {
-            console.log("✅ OAuth Success. Exchanging Token with Backend...");
+        if (status === 'success' && sessionId) {
+            console.log("✅ OAuth Success. Verifying with Backend...");
             setErrorMessage(null); // Clear any previous errors
-            exchangeTokenAndVerify(code, state);
-        } else if (status === 'success' && sessionId) {
-            console.log("⚠️ Legacy SessionID detected. Verifying...");
             verifyDetails(sessionId);
         } else if (error === 'no_issued_docs') {
             // Handle specific no_issued_docs error inline
@@ -120,13 +121,7 @@ const DigilockerVerificationScreen = ({ navigation }) => {
     const verifyWithBackendOCR = async (localUri, docType, dataToVerify) => {
         try {
             console.log(`Uploading ${docType} for Backend OCR...`);
-            // Construct base URL from api instance if possible, or use relative? 
-            // FileSystem cannot use relative. We need absolute. 
-            // api.defaults.baseURL is likely 'http://192.168.1.11:5000/api'
-            const baseUrl = api.defaults.baseURL;
-            const uploadUrl = `${baseUrl}/digilocker/verify-ocr`;
-
-            const response = await FileSystem.uploadAsync(uploadUrl, localUri, {
+            const response = await FileSystem.uploadAsync(`${BACKEND_URL}/api/digilocker/verify-ocr`, localUri, {
                 fieldName: 'documentImage',
                 httpMethod: 'POST',
                 uploadType: FileSystem.FileSystemUploadType.MULTIPART,
@@ -146,222 +141,12 @@ const DigilockerVerificationScreen = ({ navigation }) => {
         }
     };
 
-    const exchangeTokenAndVerify = async (code, state) => {
-        try {
-            setVerifying(true);
-
-            // 1. Exchange Code for Token (Local Backend)
-            const response = await api.post('/digilocker/exchange-token', {
-                code,
-                state
-            });
-
-            if (response.data.success) {
-                console.log("Token Exchange & Fetch Success");
-                const { extractedData } = response.data;
-                // Proceed to OCR Comparison (Reusing logic)
-                // We can either call a shared function or implement here.
-                // let's reuse verifyMatch logic but we need to adapt it. 
-                // Actually the `verify-match` endpoint is now redundant if we do this differently, 
-                // or we can just send the data to `verify-match` manually? 
-                // Better: Pass the `extractedData` directly to the OCR / Finalize steps.
-
-                // Since we have the data, let's verify text match LOCALLY or via a helper?
-                // The old verifyMatch did DB lookup. 
-                // Let's call verifyMatch with the extractedData? No, verifyMatch expects sessionId.
-                // We should probably just call `verify-ocr` and `finalize` now. 
-                // But wait, we need to check TEXT match too (DL number vs DB).
-
-                // Let's call a new endpoint `verify-text-match` or just do it in the app? 
-                // Security risk if app does it? 
-                // The Backend `exchange-token` ALREADY fetched the docs. 
-                // Ideally `exchange-token` should ALSO return the Match Result. 
-
-                // For now, let's assume `exchange-token` returns `extractedData`.
-                // We will verify against User Data in Context?
-                // Or we can add a simple backend check.
-
-                // Let's just proceed to OCR if data exists.
-                // Or we can modify `verify-match` to accept raw data?
-
-                // Simplest: `exchange-token` returns the data. We proceed to OCR.
-                // Text match is implicitly done if we verify OCR?
-                // User requirement: "Match details".
-                // Let's continue to OCR directly.
-
-                performOCRVerification(extractedData);
-
-            } else {
-                setModalConfig({ type: 'error', title: 'Token Error', message: response.data.message });
-                setModalVisible(true);
-            }
-        } catch (error) {
-            console.error(error);
-            setModalConfig({ type: 'error', title: 'Exchange Error', message: error.message });
-            setModalVisible(true);
-        } finally {
-            setVerifying(false);
-        }
-    };
-
-    // Extracted OCR Logic for reuse
-    const performOCRVerification = async (digilockerData) => {
-        // ... Similar to the logic inside verifyDetails but using digilockerData object
-        // We'll copy the logic from verifyDetails 2nd half here in next steps or refactor.
-
-        // For this specific insert, I'll just put a placeholder and then REFACTOR verifyDetails to use it.
-        verifyDetailsWithData(digilockerData);
-    };
-
-    const verifyDetailsWithData = async (digilockerData) => {
-        try {
-            // Granular Verification Status
-            const newVerificationStatus = {
-                dl: false,
-                pan: false,
-                aadhar: false
-            };
-            let failureReasons = [];
-
-            // --- 1. Driving License Verification ---
-            if (digilockerData?.dlNumber && user?.documentImages?.licenseFront) {
-                const localUri = await downloadImage(user.documentImages.licenseFront);
-                if (localUri) {
-                    const dlResult = await verifyWithBackendOCR(localUri, 'DL', {
-                        number: digilockerData.dlNumber,
-                        name: digilockerData.name,
-                        dob: digilockerData.dob
-                    });
-                    await FileSystem.deleteAsync(localUri, { idempotent: true });
-
-                    if (dlResult.status === VERIFICATION_STATUS.VERIFIED) {
-                        newVerificationStatus.dl = true;
-                        console.log("✅ DL Verified");
-                    } else {
-                        const reason = dlResult.reason || "Details mismatch";
-                        console.warn("❌ DL Failed:", reason);
-                        failureReasons.push(`DL: ${reason}`);
-                    }
-                } else {
-                    failureReasons.push("DL: Image download failed");
-                }
-            } else {
-                failureReasons.push("DL: Missing Data or Image");
-            }
-
-            // --- 2. PAN Card Verification ---
-            if (digilockerData?.panNumber && user?.documentImages?.panFront) {
-                const localUri = await downloadImage(user.documentImages.panFront);
-                if (localUri) {
-                    const panResult = await verifyWithBackendOCR(localUri, 'PAN', {
-                        number: digilockerData.panNumber,
-                        name: digilockerData.name,
-                        dob: digilockerData.dob
-                    });
-                    await FileSystem.deleteAsync(localUri, { idempotent: true });
-
-                    if (panResult.status === VERIFICATION_STATUS.VERIFIED) {
-                        newVerificationStatus.pan = true;
-                        console.log("✅ PAN Verified");
-                    } else {
-                        const reason = panResult.reason || "Details mismatch";
-                        console.warn("❌ PAN Failed:", reason);
-                        failureReasons.push(`PAN: ${reason}`);
-                    }
-                } else {
-                    failureReasons.push("PAN: Image download failed");
-                }
-            } else {
-                // PAN might be optional or handled differently? Assuming required for now as per previous logic
-                failureReasons.push("PAN: Missing Data or Image");
-            }
-
-            // --- 3. Aadhaar Verification ---
-            if (user?.aadharNumber && user?.documentImages?.aadharFront) {
-                const localUri = await downloadImage(user.documentImages.aadharFront);
-                if (localUri) {
-                    const aadhaarResult = await verifyWithBackendOCR(localUri, 'AADHAAR', {
-                        number: user.aadharNumber,
-                        name: digilockerData.name,
-                        dob: digilockerData.dob
-                    });
-                    await FileSystem.deleteAsync(localUri, { idempotent: true });
-
-                    if (aadhaarResult.status === VERIFICATION_STATUS.VERIFIED) {
-                        newVerificationStatus.aadhar = true;
-                        console.log("✅ Aadhaar Verified");
-                    } else {
-                        const reason = aadhaarResult.reason || "Details mismatch";
-                        console.warn("❌ Aadhaar Failed:", reason);
-                        failureReasons.push(`Aadhaar: ${reason}`);
-                    }
-                } else {
-                    failureReasons.push("Aadhaar: Image download failed");
-                }
-            } else {
-                failureReasons.push("Aadhaar: Missing Data or Image");
-            }
-
-            // Check Final Status
-            const allPassed = newVerificationStatus.dl && newVerificationStatus.pan && newVerificationStatus.aadhar;
-
-            if (allPassed) {
-                // 3. Finalize Verification on Backend
-                const finalRes = await api.post(`/digilocker/finalize-verification`, {
-                    userId: user?._id,
-                    status: 'VERIFIED',
-                    detailedStatus: newVerificationStatus
-                });
-
-                if (finalRes.data.success) {
-                    console.log("Final Approval Success");
-                    setIsVerified(true);
-                    if (loadUser) await loadUser();
-
-                    setTimeout(() => {
-                        navigation.reset({
-                            index: 0,
-                            routes: [{ name: 'RoleSelection' }],
-                        });
-                    }, 2000);
-                } else {
-                    setModalConfig({
-                        type: 'error',
-                        title: 'Verification Error',
-                        message: "Failed to finalize verification status."
-                    });
-                    setModalVisible(true);
-                }
-            } else {
-                // Show specific failures
-                const message = "Some documents failed verification:\n" + failureReasons.join("\n");
-                setModalConfig({
-                    type: 'error',
-                    title: 'Verification Incomplete',
-                    message: message
-                });
-                setModalVisible(true);
-
-                // Optional: Send partial status to backend if needed for logging
-                await api.post(`/digilocker/finalize-verification`, {
-                    userId: user?._id,
-                    status: 'PARTIAL',
-                    detailedStatus: newVerificationStatus
-                });
-            }
-        } catch (error) {
-            console.error(error);
-            setModalConfig({ type: 'error', title: 'Verification Logic Error', message: error.message });
-            setModalVisible(true);
-        }
-    };
-
     const verifyDetails = async (sessionId) => {
         try {
             setVerifying(true);
 
             // 1. Call Backend to Verify Match against DB Records (Text Match)
-            const response = await api.post(`/digilocker/verify-match`, {
+            const response = await axios.post(`${BACKEND_URL}/api/digilocker/verify-match`, {
                 sessionId,
                 userId: user?._id
             });
@@ -464,7 +249,7 @@ const DigilockerVerificationScreen = ({ navigation }) => {
 
                 if (allPassed) {
                     // 3. Finalize Verification on Backend
-                    const finalRes = await api.post(`/digilocker/finalize-verification`, {
+                    const finalRes = await axios.post(`${BACKEND_URL}/api/digilocker/finalize-verification`, {
                         userId: user?._id,
                         status: 'VERIFIED',
                         detailedStatus: newVerificationStatus
@@ -500,7 +285,7 @@ const DigilockerVerificationScreen = ({ navigation }) => {
                     setModalVisible(true);
 
                     // Optional: Send partial status to backend if needed for logging
-                    await api.post(`/digilocker/finalize-verification`, {
+                    await axios.post(`${BACKEND_URL}/api/digilocker/finalize-verification`, {
                         userId: user?._id,
                         status: 'PARTIAL',
                         detailedStatus: newVerificationStatus
@@ -542,7 +327,7 @@ const DigilockerVerificationScreen = ({ navigation }) => {
             const callbackUrl = Linking.createURL('digilocker');
 
             // 2. Get Auth URL from Backend 
-            const response = await api.get(`/digilocker/initiate`, {
+            const response = await axios.get(`${BACKEND_URL}/api/digilocker/initiate`, {
                 params: {
                     userId: user?._id,
                     callbackUrl: callbackUrl

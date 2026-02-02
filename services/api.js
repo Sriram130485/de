@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const api = axios.create({
     // Replace localhost with your machine's IP address (check via ipconfig)
     // using 10.0.2.2 for Android Emulator usually works, but for physical device/other emulators use LAN IP
-    // baseURL: 'http://192.168.1.11:5000/api',
-    baseURL: 'https://de-server-9fhx.onrender.com/api', // Production
+    baseURL: 'http://192.168.1.11:5000/api',
+    // baseURL: 'https://de-server-9fhx.onrender.com/api', // Production
 
 });
 api.interceptors.request.use(async (config) => {
